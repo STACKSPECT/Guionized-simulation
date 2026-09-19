@@ -29,7 +29,7 @@ from src.pallet.scene import (                                        # noqa: E4
     layer_base_z, layer_heights, load_configs, planned_pose,
 )
 from src.pallet.telemetry import (                                    # noqa: E402
-    episode_result, pallet_state_row, placement_row,
+    episode_result, pallet_state_row, placement_row, run_config,
 )
 
 # Grueso del dedo del Panda, medido sobre su malla. Es el número que fija cuánto hay
@@ -223,34 +223,30 @@ def test_episode_result_is_marked_as_oracle() -> None:
                                    "score"}
 
 
-def test_metrics_carry_the_real_pallet_size() -> None:
+def test_run_config_carries_the_real_pallet_size() -> None:
     """
-    El tamaño del palé viaja con el episodio.
+    El tamaño del palé viaja con la ejecución, en `runs.config`.
 
-    La interfaz dibuja a escala real y no puede deducirlo: sin este dato supone un
-    europeo de 1200x800 y pinta esta maqueta seis veces más grande. Su sitio es
-    `runs.config`, pero el SDK todavía no deja mandarlo, así que viaja en `metrics`.
+    La interfaz dibuja a escala real y no puede deducirlo de los episodios: sin este
+    dato supone un europeo de 1200x800 y pinta esta maqueta seis veces más grande.
+    `palletSize()` del front lo busca aquí primero.
     """
-    metrics = episode_result(_fake_episode(), _FakeScene()).metrics
-    assert metrics["pallet_size_m"] == [float(d) for d in PALLET["pallet"]["dims"]]
-    assert metrics["pallet_scale"] > 1.0
+    config = run_config(_FakeScene())
+    assert config["pallet_size_m"] == [float(d) for d in PALLET["pallet"]["dims"]]
+    assert config["pallet_scale"] > 1.0
+    assert sum(capa["n"] for capa in config["layers"]) == len(PALLET["script"])
 
 
-def test_metrics_carry_the_two_views() -> None:
+def test_the_views_are_named_as_the_schema_accepts() -> None:
     """
-    Las URLs de la cenital y del alzado viajan con el episodio.
+    El CHECK de `snapshots.view` solo admite top | side | iso | camera.
 
-    Su sitio natural es una tabla `snapshots` que la plataforma aún no tiene; hasta
-    entonces van en `metrics`, que es jsonb libre. Sin URLs no se inventa la clave: una
-    clave presente y vacía haría que el front pintara una imagen rota.
+    Una cámara llamada de otra forma sube el PNG a Storage y luego la fila la rechaza la
+    base con un 23514, así que la foto queda huérfana y la traza sin su imagen.
     """
-    urls = {"top": "https://x/top.png", "front": "https://x/front.png"}
-    metrics = episode_result(_fake_episode(), _FakeScene(), snapshot_urls=urls).metrics
-    assert metrics["snapshot_top_url"] == urls["top"]
-    assert metrics["snapshot_front_url"] == urls["front"]
-
-    sin_fotos = episode_result(_fake_episode(), _FakeScene()).metrics
-    assert not any(k.startswith("snapshot_") for k in sin_fotos)
+    permitidas = {"top", "side", "iso", "camera"}
+    assert set(PALLET["cameras"]) <= permitidas, (
+        f"vistas fuera del vocabulario: {set(PALLET['cameras']) - permitidas}")
 
 
 def test_the_cog_counts_boxes_outside_tolerance() -> None:

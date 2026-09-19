@@ -104,7 +104,7 @@ cameras:
     up: [0, 1, 0]
     fovy: 42                       # encuadre justo: 0.20 x 0.27 m sobre un palé de 0.21 x 0.14
     resolution: [800, 600]
-  front:                           # alzado: hace visible la altura de la carga
+  side:                            # alzado: hace visible la altura de la carga
     position: [0.45, -0.66, 0.50]
     lookat: [0.45, -0.20, 0.46]
     fovy: 30

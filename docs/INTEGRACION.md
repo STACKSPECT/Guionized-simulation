@@ -124,22 +124,21 @@ a quien lleve el backend.
 
 ---
 
-## 7. Lo que todavía no soporta la plataforma
+## 7. Imágenes, geometría y el tamaño del palé
 
-Si tu simulación los produce, guárdalos en disco y pídelos; no los metas en otra tabla.
+Las tres las cerró la plataforma en `dev`. Úsalas, no las reinventes.
 
-- **Imágenes.** No hay tabla `snapshots` ni `RunLog.snapshot()`. Aquí las dos vistas se
-  suben a Storage —el bucket lo crea la propia simulación— y sus URLs viajan en
-  `episodes.metrics` (`snapshot_top_url`, `snapshot_front_url`). Ver `upload_snapshots`
-  en `telemetry.py`; captura su propio error, porque una foto que no sube no puede
-  llevarse por delante el episodio.
-- **`runs.config`.** `RunLog.__init__` no lo acepta todavía, así que el tamaño real del
-  palé viaja de momento en `episodes.metrics` (`pallet_size_m`, `pallet_scale`). Importa
-  si trabajas a escala: sin ese dato la interfaz dibuja suponiendo un europeo de
-  1200×800.
-- **`stability_margin`** está duplicada entre `seed/palletizing.py` de Platform y
-  `src/pallet/measure.py` de aquí. Si la implementas por tercera vez, ancla los valores
-  con un test.
+- **Imágenes:** `log.snapshot(after_seq=…, view=…, png=<bytes>, width=…, height=…)`.
+  El SDK sube el PNG a Storage y rellena la `url`. Tiene que ir **antes** de `end()`,
+  que es lo que cierra el episodio del que cuelgan. `view` es vocabulario cerrado:
+  `top | side | iso | camera` — con otro nombre la base rechaza la fila con un 23514 y
+  la foto queda huérfana en Storage.
+- **Tamaño del palé:** `RunLog(config={"pallet_size_m": [x, y], ...})`. La interfaz
+  dibuja a escala real y `palletSize()` lo busca ahí. Sin él supone un europeo de
+  1200×800, y si trabajas con una maqueta todas las cotas salen mal por el factor de
+  escala.
+- **Geometría:** `from theker_telemetry import stability_margin, support_polygon`.
+  Es el indicador que define toda la interfaz; una tercera copia acabaría discrepando.
 
 ---
 

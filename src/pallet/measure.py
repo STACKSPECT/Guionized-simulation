@@ -10,12 +10,9 @@ Por eso estos números valen como línea base aunque el plan sea un puzle resuel
 antemano: lo que miden es la puntería del brazo y el comportamiento del montón, no las
 ganas del guion.
 
-El margen de estabilidad se calcula aquí, y **es una copia**. El original vive en
-`backend/seed/palletizing.py` de la plataforma, que es un script de sembrado y no es
-importable desde este entorno sin meter su carpeta en `sys.path` a mano. Mientras siga
-duplicado, lo que impide que las dos versiones discrepen es el test que ancla los
-valores (`tests/test_pallet.py`). Petición abierta a la plataforma: subirlo a
-`theker_telemetry/pallet.py` y que esta copia desaparezca.
+El margen de estabilidad NO se calcula aquí: viene de `theker_telemetry.pallet`, que es
+quien lo define. Así el número de esta simulación, el del histórico sembrado y el que
+pinta la interfaz son el mismo. El test sigue anclando los cuatro casos que lo definen.
 """
 
 from __future__ import annotations
@@ -23,21 +20,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from theker_telemetry import TRANSPORT_ACCEL_G, stability_margin, support_polygon  # noqa: F401
 
 from src.pallet.scene import Box, PalletScene, box_pose, planned_pose
 
-# Rectángulo en planta: (centro x, centro y, ancho x, ancho y).
+# Rectángulo en planta: (centro x, centro y, ancho x, ancho y). Es la forma que espera
+# `theker_telemetry.pallet`, así que no hay que traducir en la frontera.
 Rect = tuple[float, float, float, float]
-
-# Un palé no vuelca porque el CoG se salga del palé: vuelca cuando, frenando o girando,
-# el momento de vuelco supera al de restitución. Con una aceleración lateral `a`, el
-# montón cae si `a/g > d/h`, donde `d` es la distancia del CoG al borde del APOYO y `h`
-# su altura. De ahí que el margen sea `d - (a/g)*h`: apilar alto y descentrado lo empeora
-# a la vez, que es justo el compromiso que el paletizado tiene que resolver.
-#
-# 0.28 g es un giro normal de carretilla. El listón se pone ahí porque lo que se pide es
-# un palé que aguante el TRANSPORTE, no uno que se sostenga quieto.
-TRANSPORT_ACCEL_G = 0.28
 
 
 @dataclass
@@ -119,38 +108,6 @@ def support_ratio(rect: Rect, supports: list[Rect]) -> float:
     if area <= 0.0:
         return 0.0
     return min(1.0, sum(rect_overlap(rect, s) for s in supports) / area)
-
-
-def support_polygon(base: list[Rect]) -> tuple[float, float, float, float]:
-    """
-    Rectángulo que apoya en el palé: la envolvente de las huellas de la capa 1.
-
-    Lo que sostiene el montón es lo que toca la cubierta, no el palé entero. Un palé con
-    una sola caja en una esquina tiene un apoyo pequeño aunque la tabla sea enorme.
-    """
-    xs0 = [x - dx / 2 for x, _, dx, _ in base]
-    xs1 = [x + dx / 2 for x, _, dx, _ in base]
-    ys0 = [y - dy / 2 for _, y, _, dy in base]
-    ys1 = [y + dy / 2 for _, y, _, dy in base]
-    return min(xs0), max(xs1), min(ys0), max(ys1)
-
-
-def stability_margin(cog_x: float, cog_y: float, cog_z: float,
-                     base: list[Rect]) -> float:
-    """
-    Margen de estabilidad en metros. **Negativo = vuelca en la primera frenada.**
-
-    Se mide contra el borde del POLÍGONO DE SOPORTE, no contra el del palé. Contra el
-    palé los números salen optimistas y la pantalla diría que todo va bien hasta el
-    derrumbe, que es exactamente el aviso que este indicador tiene que dar antes.
-
-    Sin nada apoyado devuelve 0.0: no hay polígono que medir, y eso no es un vuelco.
-    """
-    if not base:
-        return 0.0
-    x0, x1, y0, y1 = support_polygon(base)
-    d_edge = min(cog_x - x0, x1 - cog_x, cog_y - y0, y1 - cog_y)
-    return d_edge - TRANSPORT_ACCEL_G * cog_z
 
 
 def overhang(rect: Rect, pallet: Rect) -> float:

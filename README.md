@@ -46,7 +46,7 @@ Cada ejecución deja en `runs/<timestamp>-pallet/`:
 ```
 episodes.jsonl        una línea JSON por episodio: el resultado y sus métricas
 <seed>/top.png        cenital del palé terminado
-<seed>/front.png      alzado
+<seed>/side.png       alzado
 ```
 
 Para subir hace falta un `.env` con las credenciales: copia `.env.example`. Sin él la
@@ -58,11 +58,9 @@ filas salen según se miden, así que la pantalla Live de la plataforma enseña 
 montarse paquete a paquete en vez de aparecer ya montado. El `jsonl` en disco sigue
 siendo la fuente de verdad; si la red falla, el episodio no se entera.
 
-Las dos imágenes **también se suben**: van a Supabase Storage (bucket `snapshots`,
-público) y sus URLs viajan en `episodes.metrics` como `snapshot_top_url` y
-`snapshot_front_url`. Su sitio natural sería una tabla `snapshots` con su `after_seq`,
-que la plataforma todavía no tiene; moverlas después es cambiar de dónde las lee el
-front, no volver a producirlas.
+Las dos imágenes **también se suben**, por `RunLog.snapshot()`: el PNG va a Storage y la
+fila a la tabla `snapshots`, con el `after_seq` de la última colocación — así la foto y
+el último punto de la traza de CoG son el mismo instante.
 
 ## Cómo está organizado
 

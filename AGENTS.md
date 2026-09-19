@@ -119,16 +119,19 @@ y `tests/test_pallet.py` comprueba que se siguen cumpliendo sin arrancar el simu
 - **No toques `configs/` a ojo.** Cada valor raro tiene su medida al lado.
 - **No añadas dependencias** sin mirar antes si MuJoCo o numpy ya lo hacen.
 
-## 7. Deuda conocida
+## 7. El contrato, al día
 
-- **`stability_margin` está duplicada.** El original vive en `seed/palletizing.py` de la
-  plataforma, que no es importable desde este entorno. Lo que impide que discrepen es el
-  test que ancla los valores. Pedido: subirla a `theker_telemetry/pallet.py`.
-- **Las dos imágenes suben a Storage, pero sus URLs van en `metrics`.** La plataforma
-  no tiene tabla `snapshots` ni `RunLog.snapshot()`, así que el bucket lo crea la propia
-  simulación y las URLs viajan como `snapshot_top_url` / `snapshot_front_url`. Cuando
-  exista la tabla, es mover dos claves.
-- **El tamaño real del palé viaja en `episodes.metrics`** (`pallet_size_m`,
-  `pallet_scale`) y su sitio es `runs.config`, pero `RunLog` todavía no deja mandarlo.
-  Importa: sin ese dato la interfaz dibuja esta maqueta de 210×140 mm como un europeo
-  de 1200×800 y todas las cotas salen 5.7 veces mal.
+La plataforma cerró en `dev` las tres cosas que faltaban, así que ya no hay apaños:
+
+- **`stability_margin` y `support_polygon` vienen de `theker_telemetry`.** No se
+  reimplementan aquí; el test sigue anclando los cuatro casos que las definen.
+- **Las imágenes van por `RunLog.snapshot(png=...)`**: el SDK sube el PNG a Storage y
+  rellena la `url`. El `after_seq` es el de la última colocación, para que la foto y el
+  último punto de la traza de CoG sean el mismo instante.
+- **El tamaño del palé va en `runs.config`**, que es su sitio. `palletSize()` del front
+  lo busca ahí primero. No lo dupliques en `metrics`.
+
+**El vocabulario de vistas también está cerrado**: `top | side | iso | camera`. Una
+cámara con otro nombre sube el PNG y luego la fila la rechaza la base con un 23514: la
+foto queda huérfana y la traza sin imagen. Lo vigila
+`test_the_views_are_named_as_the_schema_accepts`.

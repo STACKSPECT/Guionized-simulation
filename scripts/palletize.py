@@ -40,7 +40,7 @@ from theker_telemetry import RunLog                                   # noqa: E4
 from src.pallet.episode import run_episode                            # noqa: E402
 from src.pallet.scene import build_scene, load_configs                # noqa: E402
 from src.pallet.telemetry import (                                    # noqa: E402
-    RunLogSink, episode_result, save_snapshots,
+    RunLogSink, episode_result, run_config, save_snapshots,
 )
 
 
@@ -79,6 +79,8 @@ def main() -> int:
         oracle=True,
         motion_speed=args.motion_speed,
         tag="pallet", label=args.label,
+        # El tamaño real del palé. La interfaz dibuja a escala y no puede deducirlo.
+        config=run_config(scene),
         n_episodes=args.episodes,
         remote=args.telemetry,
     )
@@ -123,8 +125,8 @@ def main() -> int:
         if episode is None:
             return 0                              # visor cerrado a mano
 
-        # El disco siempre, y antes que nada. Las fotos no llegan a Supabase todavía:
-        # falta el bucket y la tabla del otro lado.
+        # El disco siempre, y antes que la red: las dos fotos quedan en runs/ pase lo
+        # que pase, y `sink.end()` las sube además a Storage.
         save_snapshots(episode, log.directory / str(seed))
         if sink is not None:
             sink.end(episode)                     # escribe el jsonl y cierra el episodio
