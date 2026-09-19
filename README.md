@@ -4,7 +4,9 @@ A robot arm picks 10 boxes off a table and stacks them on a pallet: the large on
 underneath, the medium ones on top, every layer flat. Simulated in MuJoCo with a Franka
 Emika Panda.
 
-![The finished pallet, seen from above](docs/img/pallet-top.png)
+<div align="center">
+  <img src="docs/img/cell-overview.png" alt="The cell mid-run: the Panda arm carries a box while the first layer of large boxes sits on the pallet and the medium ones wait on the table" width="900">
+</div>
 
 **None of this is decided by an algorithm.** Which box goes in which slot is written by
 hand in [`configs/pallet.yaml`](configs/pallet.yaml) and the puzzle fits, like a game of
@@ -12,8 +14,6 @@ Tetris that has already been solved. There is no perception, no planner, nothing
 get a choice wrong.
 
 What **is** real is the physics — and therefore everything that gets measured.
-
-![The finished pallet in elevation](docs/img/pallet-side.png)
 
 ## Why it exists
 
@@ -126,8 +126,13 @@ runs/<timestamp>-pallet/
   <seed>/009-side.png   elevation
 ```
 
-The two images in this README are exactly `009-top.png` and `009-side.png` from a real
-run, copied into `docs/img/`.
+The two views below are exactly `009-top.png` and `009-side.png` from a real run, copied
+into `docs/img/`.
+
+<div align="center">
+  <img src="docs/img/pallet-top.png" alt="The finished pallet, seen from above" width="360">
+  <img src="docs/img/pallet-side.png" alt="The finished pallet in elevation" width="360">
+</div>
 
 ### Telemetry
 
