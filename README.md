@@ -1,117 +1,264 @@
-# Paletizado guionizado
+# Scripted palletizing
 
-Un brazo robótico coge 10 cajas de una mesa y las apila en un palé: las grandes abajo,
-las medianas encima, cada capa plana. Simulado en MuJoCo, con un Franka Panda.
+A robot arm picks 10 boxes off a table and stacks them on a pallet: the large ones
+underneath, the medium ones on top, every layer flat. Simulated in MuJoCo with a Franka
+Emika Panda.
 
-**Nada de esto lo decide un algoritmo.** Qué caja va a qué hueco está escrito a mano en
-`configs/pallet.yaml` y el puzle encaja, como una partida de Tetris ya resuelta. No hay
-percepción, no hay planificador, no hay nada que se pueda equivocar eligiendo.
+<div align="center">
+  <img src="docs/img/cell-overview.png" alt="The cell mid-run: the Panda arm carries a box while the first layer of large boxes sits on the pallet and the medium ones wait on the table" width="900">
+</div>
 
-Lo que **sí** es real es la física — y por tanto todo lo que se mide.
+**None of this is decided by an algorithm.** Which box goes in which slot is written by
+hand in [`configs/pallet.yaml`](configs/pallet.yaml) and the puzzle fits, like a game of
+Tetris that has already been solved. There is no perception, no planner, nothing that can
+get a choice wrong.
 
-## Para qué existe
+What **is** real is the physics — and therefore everything that gets measured.
 
-Para que la plataforma de observabilidad reciba episodios de paletizado **de verdad**
-desde el primer día, sin esperar a que exista el sistema que los producirá.
+## Why it exists
 
-El plan está guionizado; la medida, no. El brazo agarra de verdad, las cajas caen y se
-asientan de verdad, y cada número que se sube sale de medir el estado del simulador:
-el error contra el hueco planificado, cuánto apoya cada caja, cuánto sobresale, dónde
-queda el centro de gravedad y con qué margen aguantaría el transporte. Eso hace que
-estos episodios valgan como línea base aunque el guion sea un puzle resuelto.
+So that the observability platform receives **genuine** palletizing episodes from day one,
+without waiting for the system that will eventually produce them.
 
-Cuando llegue el pipeline real, sustituye el guion y no toca nada más.
+The plan is scripted; the measurement is not. The arm really grips, the boxes really fall
+and settle, and every number uploaded comes from measuring the simulator's state: the
+error against the planned slot, how much of each box is supported, how far it overhangs,
+where the centre of gravity ends up and with what margin the stack would survive
+transport. That is what makes these episodes usable as a baseline even though the script
+is a solved puzzle.
 
-## Arranque
+When the real pipeline arrives, it replaces the script and touches nothing else.
+
+## Requirements
+
+- **Python 3.12** (developed and verified on 3.12.3).
+- **Linux with a working OpenGL stack.** Headless rendering uses EGL and needs a render
+  node (`/dev/dri/renderD*`); `MUJOCO_GL=glx` against an X display works too. The
+  simulation is headless by default — `scripts/palletize.py` sets `MUJOCO_GL=egl` itself
+  whenever `--viewer` is absent.
+- **`git`**, to fetch the arm model at install time.
+- **The `theker_telemetry` SDK** — see the limitation below. It is a hard requirement, not
+  an optional extra.
+- Supabase credentials are **optional**: without them the simulation runs and writes to
+  `runs/` just the same.
+
+### The one dependency that is not in `requirements.txt`
+
+`theker_telemetry` is imported at the top of `scripts/palletize.py`,
+`src/pallet/telemetry.py`, `src/pallet/measure.py` and `tests/test_pallet.py`. **It is not
+on PyPI.** It lives in the sibling [`Platform`](https://github.com/STACKSPECT/Platform)
+repository under `backend/`, on its `dev` branch, and `scripts/setup.sh` installs it
+editable from a local checkout.
+
+This is a real limitation and worth stating plainly: **without that repository this one
+will not start from a clean clone.** Not the simulation, not even the tests — the import
+fails before anything runs. The SDK is deliberately not vendored here: it is the contract
+for what the platform stores, and whoever stores the data is who defines its shape.
+
+`setup.sh` looks for it at `../../orca/workspaces/Platform/main/backend` by default and
+takes an override:
+
+```bash
+git clone --branch dev https://github.com/STACKSPECT/Platform.git ../Platform
+SDK=../Platform/backend bash scripts/setup.sh
+```
+
+If it is missing, `setup.sh` warns and carries on — but the simulation will then fail at
+import time.
+
+## Installation
 
 ```bash
 bash scripts/setup.sh
 source .venv/bin/activate
-
-python scripts/palletize.py --viewer --speed 3   # verlo montarse
-python scripts/palletize.py --viewer --hold      # y dejar la ventana abierta al acabar
-python scripts/palletize.py -n 3                 # 3 episodios, headless
-python scripts/palletize.py -n 3 --no-telemetry  # sin subir, solo disco
-python tests/test_pallet.py                      # comprobaciones
 ```
 
-`--speed` es el ritmo al que **ves** el visor; no toca al robot. La velocidad del brazo
-es `--motion-speed`, y por encima de x1 la caja se escurre de la pinza: la tabla de
-medidas está en `configs/pallet.yaml`.
+`scripts/setup.sh` is idempotent and can be re-run. It creates `.venv/`, installs the
+pinned `requirements.txt`, installs the telemetry SDK editable, checks that the SDK
+actually carries the episode lifecycle (`RunLog.begin`), and sparse-clones the Franka
+Panda model from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)
+into `third_party/`. The model is cloned rather than committed: it is megabytes of meshes
+under its own licence.
 
-## Qué produce
+Then check the install:
 
-Cada ejecución deja en `runs/<timestamp>-pallet/`:
-
-```
-episodes.jsonl        una línea JSON por episodio: el resultado y sus métricas
-<seed>/003-top.png    cenital al cerrar la capa 1
-<seed>/003-side.png   alzado
-<seed>/009-top.png    cenital del palé terminado
-<seed>/009-side.png   alzado
+```bash
+python tests/test_pallet.py      # 16 checks, no simulator needed
 ```
 
-**Sube por defecto** si hay un `.env` con las credenciales (copia `.env.example`). Sin
-él corre igual y escribe en `runs/`, y lo dice al arrancar en vez de callárselo:
+## Usage
+
+```bash
+python scripts/palletize.py                      # one episode, headless, to disk
+python scripts/palletize.py --viewer --speed 3   # watch it build
+python scripts/palletize.py --viewer --hold      # and keep the window open at the end
+python scripts/palletize.py -n 3                 # 3 episodes, headless
+python scripts/palletize.py -n 3 --no-telemetry  # no upload, disk only
+```
+
+One episode takes roughly three minutes of wall clock.
+
+### Flags
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-n`, `--episodes` | `1` | How many episodes to run. |
+| `--seed` | `1` | Seed of the first episode; the rest follow on from it. |
+| `--viewer` | off | Opens the interactive viewer. Only valid with a single episode. |
+| `--hold` | off | With `--viewer`, leaves the window open at the end so you can inspect the finished pallet. The run does not terminate until you close it. |
+| `--speed` | `1.0` | **Playback** rate in the viewer. Does not touch the robot. |
+| `--motion-speed` | `1.0` | The arm's **real** speed, as a multiple of the value in `configs/pallet.yaml`. Above ×1 the box slips out of the gripper — the measurement table is in that file. |
+| `--no-telemetry` | off | Do not upload to Supabase; write to disk only. Telemetry is **on by default** when credentials are present. |
+| `--label` | `paletizado guionizado` | Name of the run in the platform's run list. |
+
+Viewer controls: drag to rotate the camera, scroll to zoom, `ESC` to quit.
+
+### What it produces
+
+Every run leaves a directory under `runs/`:
+
+```
+runs/<timestamp>-pallet/
+  episodes.jsonl        one JSON line per episode: the outcome and its metrics
+  <seed>/003-top.png    overhead view as layer 1 closes
+  <seed>/003-side.png   elevation
+  <seed>/009-top.png    overhead view of the finished pallet
+  <seed>/009-side.png   elevation
+```
+
+The two views below are exactly `009-top.png` and `009-side.png` from a real run, copied
+into `docs/img/`.
+
+<div align="center">
+  <img src="docs/img/pallet-top.png" alt="The finished pallet, seen from above" width="360">
+  <img src="docs/img/pallet-side.png" alt="The finished pallet in elevation" width="360">
+</div>
+
+### Telemetry
+
+**It uploads by default** when a `.env` with credentials is present (copy
+[`.env.example`](.env.example)). Without one it runs just the same and writes to `runs/`,
+and it says so at startup rather than keeping quiet about it:
 
 ```
 telemetría: ACTIVA · /runs/<id>
 telemetría: solo disco · NO hay credenciales.
 ```
 
-Con `--telemetry` se replica a Supabase **en vivo**: el episodio nace en curso y las
-filas salen según se miden, así que la pantalla Live de la plataforma enseña el palé
-montarse paquete a paquete en vez de aparecer ya montado. El `jsonl` en disco sigue
-siendo la fuente de verdad; si la red falla, el episodio no se entera.
+When it is active, the run is replicated to Supabase **live**: the episode is born
+in-progress and the rows go out as they are measured, so the platform's Live screen shows
+the pallet building package by package instead of appearing fully stacked. The `jsonl` on
+disk remains the source of truth; if the network fails, the episode does not notice.
 
-Las imágenes **también se suben**, por `RunLog.snapshot()`: el PNG va a Storage y la fila
-a la tabla `snapshots`. Hay una por capa cerrada y otra del palé terminado, cada una con
-el `after_seq` de su colocación — así la foto y ese punto de la traza de CoG son el mismo
-instante.
+The images **are uploaded too**, via `RunLog.snapshot()`: the PNG goes to Storage and the
+row to the `snapshots` table. There is one per closed layer and one of the finished
+pallet, each carrying the `after_seq` of its placement — so the photo and that point on the
+centre-of-gravity trace are the same instant.
 
-## Cómo está organizado
+## Development
 
 ```
-configs/scene.yaml       la celda: brazo, mesa y velocidades
-configs/pallet.yaml      el palé, el catálogo de cajas y EL GUION
-src/cell.py              mesa, cámaras y convención de agarre
-src/control/arm.py       IK diferencial (mink) -> actuadores
-src/pallet/scene.py      construcción de la escena y las dos vistas
-src/pallet/measure.py    la medida sobre el estado real del simulador
-src/pallet/episode.py    la maniobra y el bucle del episodio
-src/pallet/telemetry.py  ÚNICO sitio que sabe que la plataforma existe
-tests/test_pallet.py     15 comprobaciones, sin framework ni simulador
+configs/scene.yaml       the cell: arm, table and speeds
+configs/pallet.yaml      the pallet, the box catalogue and THE SCRIPT
+src/cell.py              table, cameras and the grasp convention
+src/control/arm.py       differential IK (mink) -> actuators
+src/pallet/scene.py      scene construction and the two views
+src/pallet/measure.py    measurement over the simulator's real state
+src/pallet/episode.py    the manoeuvre and the episode loop
+src/pallet/telemetry.py  the ONLY place that knows the platform exists
+tests/test_pallet.py     16 checks, no framework and no simulator
 ```
 
-## Resultados (19/09/2026)
+Checks:
 
-10 cajas, 2 capas, palé de 210 × 140 mm (maqueta 1:5.7 de un europeo: la pinza del
-Panda abre 80 mm y un palé de verdad es inagarrable).
+```bash
+python tests/test_pallet.py      # 16 checks
+python -m src.pallet.measure     # the measurement, with its own asserts
+```
+
+The tests use **no framework on purpose** — plain `assert`s run as a script. New tests
+should follow that. [`CONTRIBUTING.md`](CONTRIBUTING.md) has the full workflow;
+[`AGENTS.md`](AGENTS.md) carries the hard rules and the reasoning behind the values in
+`configs/`, and is the thing to read before changing anything.
+
+## Results (2026-09-19)
+
+10 boxes, 2 layers, a 210 × 140 mm pallet (a 1:5.7 model of a Euro pallet: the Panda's
+gripper opens 80 mm and a real pallet is ungraspable).
 
 | | |
 |---|---:|
-| Colocadas | 10/10 |
-| Error de colocación, medio · máximo | 2.6 mm · 5.6 mm |
-| Planitud de la capa superior | 0.1 mm |
-| Voladizo máximo | 0.2 mm |
-| CoG respecto al centro del palé | 2.2 mm |
-| Margen de estabilidad al terminar | +58 mm |
-| Ocupación del palé | 77 % |
-| Duración | 199 s simulados |
+| Placed | 10/10 |
+| Placement error, mean · max | 2.6 mm · 5.7 mm |
+| Flatness of the top layer | 0.1 mm |
+| Maximum overhang | 0.2 mm |
+| CoG relative to the pallet centre | 2.2 mm |
+| Stability margin at the end | +58 mm |
+| Pallet fill | 77 % |
+| Duration | 204 s simulated |
 
-Repetible: el guion es fijo y MuJoCo determinista, así que la misma semilla da el mismo
-palé. Eso es lo que hace comparables dos commits.
+Repeatable: the script is fixed and MuJoCo is deterministic, so the same seed gives the
+same pallet on the same machine with the same pinned dependencies. That is what makes two
+commits comparable.
 
-## Para el paletizado de verdad
+## For the real palletizer
 
-Cuando exista la simulación real —con percepción y planificador—, `docs/INTEGRACION.md`
-dice cómo enchufarla a la plataforma igual que ésta: las cinco llamadas, lo único que
-cambia, las cinco trampas y cómo comprobarlo.
+When the real simulation exists — with perception and a planner —
+[`docs/INTEGRACION.md`](docs/INTEGRACION.md) explains how to plug it into the platform the
+same way this one is: the five calls, the only thing that changes, the five traps and how
+to check it. (That document is in Spanish.)
 
-## De dónde sale
+## Dependencies
 
-La geometría, el control y la calibración vienen de la simulación de inducción del reto
-THEKER Robotics (HackSpain '26), donde estaban mezcladas con su percepción y su
-planificador. Aquí llegan sueltas. Los números medidos que justifican cada valor están
-en los comentarios de `configs/pallet.yaml`, que es donde hay que mirar antes de tocar
-nada: hay cuatro que costaron encontrar y que no se ajustan a ojo.
+Everything is pinned in [`requirements.txt`](requirements.txt). The licences below were
+audited with `pip-licenses` against the resolved environment, not taken from memory.
+
+| Package | Version | Licence |
+|---|---|---|
+| [mujoco](https://github.com/google-deepmind/mujoco) | 3.13.0 | Apache-2.0 |
+| [mink](https://kevinzakka.github.io/mink/) | 1.3.0 | Apache-2.0 |
+| [qpsolvers](https://github.com/qpsolvers/qpsolvers) | 4.13.0 | **LGPL-3.0** |
+| [daqp](https://github.com/darnstrom/daqp) | 0.9.1 | MIT |
+| [numpy](https://numpy.org) | 2.4.4 | BSD-3-Clause |
+| [scipy](https://scipy.org/) | 1.18.1 | BSD-3-Clause |
+| [PyYAML](https://pyyaml.org/) | 6.0.3 | MIT |
+| [imageio](https://github.com/imageio/imageio) | 2.37.3 | BSD-2-Clause |
+
+Pulled in transitively: `absl-py` (Apache-2.0), `etils` (Apache-2.0), `fsspec`
+(BSD-3-Clause), `glfw` (MIT), `pillow` (MIT-CMU), `PyOpenGL` (BSD), `typing_extensions`
+(PSF-2.0), `zipp` (MIT).
+
+`qpsolvers` and `daqp` are listed explicitly because mink solves the IK with `qpsolvers`
+and ships **no solver backend of its own**: without one, `solve_ik` blows up at runtime.
+
+### A note on the LGPL dependency
+
+`qpsolvers` is **LGPL-3.0**, the only copyleft licence in the tree. It is used as an
+unmodified library, installed from PyPI by `pip`, and no part of it is copied into or
+redistributed by this repository. That is the case the LGPL explicitly allows, so it does
+not oblige this project to change its own licence. Anyone redistributing a **bundled**
+artefact of this project (a container image, a frozen executable) does take on the LGPL's
+obligations for that bundle, and should keep `qpsolvers` replaceable.
+
+### Not redistributed here
+
+- **[MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)** — the Franka
+  Emika Panda model, cloned into `third_party/` by `scripts/setup.sh` at install time and
+  listed in `.gitignore`. The `franka_emika_panda` model is **Apache-2.0**; Menagerie
+  licenses per directory, so check the model's own `LICENSE` rather than assuming. Nothing
+  of it is committed here.
+- **`theker_telemetry`** — installed editable from the sibling `Platform` repository, as
+  described above.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE). Copyright (c) 2026 STACKSPECT.
+
+## Where it comes from
+
+The geometry, the control and the calibration come from the induction simulation of the
+THEKER Robotics challenge (HackSpain '26), where they were tangled up with its perception
+and its planner. Here they arrive on their own. The measured numbers justifying each value
+are in the comments of `configs/pallet.yaml`, which is where to look before touching
+anything: four of them were hard-won and cannot be tuned by eye. Those config comments and
+`AGENTS.md` are in Spanish, as is the code's commentary.

@@ -45,10 +45,15 @@ python -m src.pallet.measure                  # la medida, con sus asserts
 
 El SDK `theker_telemetry` **no vive aquí**: es el contrato de lo que la plataforma
 guarda, y quien define la forma del dato es quien lo almacena. `setup.sh` lo instala
-editable desde el repo Platform y comprueba que trae `RunLog.begin`: solo la rama
-`feature/backend-hardening` tiene el ciclo de vida del episodio.
+editable desde el repo Platform y comprueba que trae `RunLog.begin`: hace falta la rama
+`dev`, que es la que tiene el ciclo de vida del episodio.
 
 Las credenciales de Supabase se leen del `.env` del repo o del de su carpeta padre.
+
+`dev` es la rama de integración: se sale de ella y los PR van contra ella, no contra
+`main`. El flujo completo —commits, comprobaciones, cómo se escriben los tests— está en
+`CONTRIBUTING.md`. La documentación de cara al público (`README.md`, `CONTRIBUTING.md`)
+va en inglés; el código, sus comentarios, `configs/` y este documento siguen en español.
 
 ## 4. Reglas duras
 
