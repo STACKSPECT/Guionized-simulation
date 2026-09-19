@@ -124,9 +124,10 @@ y `tests/test_pallet.py` comprueba que se siguen cumpliendo sin arrancar el simu
 - **`stability_margin` está duplicada.** El original vive en `seed/palletizing.py` de la
   plataforma, que no es importable desde este entorno. Lo que impide que discrepen es el
   test que ancla los valores. Pedido: subirla a `theker_telemetry/pallet.py`.
-- **Las dos imágenes del palé no se suben.** La plataforma no tiene bucket, ni tabla
-  `snapshots`, ni `RunLog.snapshot()`. Se guardan en `runs/<ts>/<seed>/` y enchufarlas
-  después son unas pocas líneas en `telemetry.py`.
+- **Las dos imágenes suben a Storage, pero sus URLs van en `metrics`.** La plataforma
+  no tiene tabla `snapshots` ni `RunLog.snapshot()`, así que el bucket lo crea la propia
+  simulación y las URLs viajan como `snapshot_top_url` / `snapshot_front_url`. Cuando
+  exista la tabla, es mover dos claves.
 - **El tamaño real del palé viaja en `episodes.metrics`** (`pallet_size_m`,
   `pallet_scale`) y su sitio es `runs.config`, pero `RunLog` todavía no deja mandarlo.
   Importa: sin ese dato la interfaz dibuja esta maqueta de 210×140 mm como un europeo

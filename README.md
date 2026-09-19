@@ -29,6 +29,7 @@ bash scripts/setup.sh
 source .venv/bin/activate
 
 python scripts/palletize.py --viewer --speed 3   # verlo montarse
+python scripts/palletize.py --viewer --hold      # y dejar la ventana abierta al acabar
 python scripts/palletize.py -n 3                 # medirlo, headless
 python scripts/palletize.py -n 3 --telemetry     # y subirlo a Supabase
 python tests/test_pallet.py                      # comprobaciones
@@ -57,7 +58,11 @@ filas salen según se miden, así que la pantalla Live de la plataforma enseña 
 montarse paquete a paquete en vez de aparecer ya montado. El `jsonl` en disco sigue
 siendo la fuente de verdad; si la red falla, el episodio no se entera.
 
-Las dos imágenes todavía no se suben: la plataforma no tiene aún dónde guardarlas.
+Las dos imágenes **también se suben**: van a Supabase Storage (bucket `snapshots`,
+público) y sus URLs viajan en `episodes.metrics` como `snapshot_top_url` y
+`snapshot_front_url`. Su sitio natural sería una tabla `snapshots` con su `after_seq`,
+que la plataforma todavía no tiene; moverlas después es cambiar de dónde las lee el
+front, no volver a producirlas.
 
 ## Cómo está organizado
 

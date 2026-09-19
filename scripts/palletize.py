@@ -52,6 +52,9 @@ def main() -> int:
                         help="semilla del primer episodio; las siguientes van detrás")
     parser.add_argument("--viewer", action="store_true",
                         help="abre el visor interactivo (solo con un episodio)")
+    parser.add_argument("--hold", action="store_true",
+                        help="con --viewer, deja la ventana abierta al acabar para "
+                             "mirar el palé. Entonces no termina hasta que la cierres")
     parser.add_argument("--speed", type=float, default=1.0,
                         help="ritmo de REPRODUCCIÓN en el visor. No toca al robot")
     parser.add_argument("--motion-speed", type=float, default=1.0,
@@ -93,8 +96,12 @@ def main() -> int:
         return 1
 
     dims = pallet_cfg["pallet"]["dims"]
+    # Se dice "por episodio" a propósito: leer "10 cajas · 1 episodio" y entender que
+    # ha corrido 1 de 10 es fácil, y son dos cuentas distintas.
     print(f"palé {dims[0] * 1000:.0f} x {dims[1] * 1000:.0f} mm · "
-          f"{len(scene.boxes)} cajas · {args.episodes} episodio(s)")
+          f"{len(scene.boxes)} cajas por episodio · "
+          f"{args.episodes} episodio{'s' if args.episodes != 1 else ''} a correr"
+          + ("  (usa -n para más)" if args.episodes == 1 else ""))
 
     ok = 0
     for i in range(args.episodes):
@@ -168,13 +175,15 @@ def _run(scene, seed: int, args, sink=None):
             print("visor cerrado")
             return None
 
-        # La ventana se queda abierta con el palé montado. Cerrarla en cuanto cae la
-        # última caja es cerrarla justo en el instante que hay que mirar: el resultado.
-        # Y es el mismo instante que retratan las dos fotos que se suben.
-        print("  palé terminado · ESC o cerrar la ventana para seguir")
-        while viewer.is_running():
-            viewer.sync()
-            time.sleep(1 / 60)
+        # Por defecto el visor se cierra al acabar y el programa termina. Con `--hold`
+        # se queda abierto para poder mirar el palé montado; entonces NO termina hasta
+        # que lo cierres, que es justo lo que se espera de un flag que se llama así.
+        # Las dos fotos retratan ese mismo instante, así que no hace falta para verlo.
+        if args.hold:
+            print("  palé terminado · ESC o cerrar la ventana para seguir")
+            while viewer.is_running():
+                viewer.sync()
+                time.sleep(1 / 60)
         return episode
 
 

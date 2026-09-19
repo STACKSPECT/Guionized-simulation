@@ -128,8 +128,11 @@ a quien lleve el backend.
 
 Si tu simulación los produce, guárdalos en disco y pídelos; no los metas en otra tabla.
 
-- **Imágenes.** No hay bucket, ni tabla `snapshots`, ni `RunLog.snapshot()`. Aquí las dos
-  vistas del palé se guardan en `runs/<ts>/<seed>/`.
+- **Imágenes.** No hay tabla `snapshots` ni `RunLog.snapshot()`. Aquí las dos vistas se
+  suben a Storage —el bucket lo crea la propia simulación— y sus URLs viajan en
+  `episodes.metrics` (`snapshot_top_url`, `snapshot_front_url`). Ver `upload_snapshots`
+  en `telemetry.py`; captura su propio error, porque una foto que no sube no puede
+  llevarse por delante el episodio.
 - **`runs.config`.** `RunLog.__init__` no lo acepta todavía, así que el tamaño real del
   palé viaja de momento en `episodes.metrics` (`pallet_size_m`, `pallet_scale`). Importa
   si trabajas a escala: sin ese dato la interfaz dibuja suponiendo un europeo de

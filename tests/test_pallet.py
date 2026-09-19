@@ -236,6 +236,23 @@ def test_metrics_carry_the_real_pallet_size() -> None:
     assert metrics["pallet_scale"] > 1.0
 
 
+def test_metrics_carry_the_two_views() -> None:
+    """
+    Las URLs de la cenital y del alzado viajan con el episodio.
+
+    Su sitio natural es una tabla `snapshots` que la plataforma aún no tiene; hasta
+    entonces van en `metrics`, que es jsonb libre. Sin URLs no se inventa la clave: una
+    clave presente y vacía haría que el front pintara una imagen rota.
+    """
+    urls = {"top": "https://x/top.png", "front": "https://x/front.png"}
+    metrics = episode_result(_fake_episode(), _FakeScene(), snapshot_urls=urls).metrics
+    assert metrics["snapshot_top_url"] == urls["top"]
+    assert metrics["snapshot_front_url"] == urls["front"]
+
+    sin_fotos = episode_result(_fake_episode(), _FakeScene()).metrics
+    assert not any(k.startswith("snapshot_") for k in sin_fotos)
+
+
 def test_the_cog_counts_boxes_outside_tolerance() -> None:
     """
     El paquete que derrumba el montón entra en el centro de gravedad.

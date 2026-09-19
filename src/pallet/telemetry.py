@@ -25,6 +25,8 @@ el episodio sigue.
 
 from __future__ import annotations
 
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -34,6 +36,9 @@ from theker_telemetry import EpisodeResult, RunLog
 from src.pallet import measure
 from src.pallet.episode import Episode
 from src.pallet.scene import PalletScene
+
+# Bucket de Storage donde van las dos vistas del palé. Se crea solo la primera vez.
+BUCKET = "snapshots"
 
 
 class RunLogSink:
@@ -54,8 +59,13 @@ class RunLogSink:
         self.log.begin(seed, n_objects=len(self.scene.boxes))
 
     def end(self, episode: Episode) -> EpisodeResult:
-        """Cierra el episodio. El `PATCH` es el aviso de "terminado" que Live espera."""
-        result = episode_result(episode, self.scene)
+        """Cierra el episodio. El `PATCH` es el aviso de "terminado" que Live espera.
+
+        Las dos vistas del palé se suben ANTES del cierre, porque sus URLs viajan en las
+        métricas del episodio y el `PATCH` es lo que las escribe.
+        """
+        urls = upload_snapshots(self.log, episode)
+        result = episode_result(episode, self.scene, snapshot_urls=urls)
         self.log.end(result)
         return result
 
@@ -122,7 +132,8 @@ def pallet_state_row(index: int, state: measure.PalletState, drift: float) -> di
     }
 
 
-def episode_result(episode: Episode, scene: PalletScene) -> EpisodeResult:
+def episode_result(episode: Episode, scene: PalletScene,
+                   snapshot_urls: dict[str, str] | None = None) -> EpisodeResult:
     """El resumen del episodio, con las métricas de paletizado en `metrics`."""
     state = episode.states[-1] if episode.states else None
     on_pallet = measure.on_pallet(scene, episode.placements)
@@ -158,8 +169,94 @@ def episode_result(episode: Episode, scene: PalletScene) -> EpisodeResult:
             # mientras tanto, que `metrics` es jsonb libre y no se pierde el dato.
             "pallet_size_m": [_r(d) for d in pallet["dims"]],
             "pallet_scale": float(pallet["scale"]),
+            # Las dos vistas del palé terminado. Su sitio natural es una tabla
+            # `snapshots` con su `after_seq`, que la plataforma todavía no tiene; hasta
+            # entonces viajan aquí, que `metrics` es jsonb libre y es el punto de
+            # extensión del contrato. Mover esto después es cambiar de dónde lo lee el
+            # front, no volver a producirlo.
+            **{f"snapshot_{view}_url": url
+               for view, url in (snapshot_urls or {}).items()},
         },
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Imágenes a Supabase Storage.
+#
+# El SDK no sabe de Storage: cuelga de `/storage/v1` y no de `/rest/v1`, y el cuerpo es
+# el fichero en crudo, no JSON. Son treinta líneas de `urllib` y se hablan desde aquí,
+# reutilizando la clave y el timeout del cliente que ya existe.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_storage_warned = False
+
+
+def _root(client) -> str:
+    """La raíz del proyecto. El cliente solo guarda la de PostgREST."""
+    return client.base.removesuffix("/rest/v1")
+
+
+def _request(client, url: str, *, data=None, method="GET", content_type=None) -> bytes:
+    headers = {"apikey": client.key, "Authorization": f"Bearer {client.key}"}
+    if content_type:
+        headers["Content-Type"] = content_type
+        headers["x-upsert"] = "true"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    with urllib.request.urlopen(request, timeout=client.timeout) as response:
+        return response.read()
+
+
+def ensure_bucket(client, bucket: str = BUCKET) -> None:
+    """
+    Crea el bucket si no existe. Público en lectura, para que las URLs valgan tal cual.
+
+    "Ya existe" es el caso normal a partir de la segunda vez, y hay que reconocerlo por
+    el CUERPO y no por el código HTTP: Supabase contesta 400 con un `statusCode: 409`
+    dentro del JSON, así que mirar `err.code` no basta.
+    """
+    try:
+        _request(client, f"{_root(client)}/storage/v1/bucket",
+                 data=f'{{"id":"{bucket}","name":"{bucket}","public":true}}'.encode(),
+                 method="POST", content_type="application/json")
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode("utf-8", "replace")
+        if err.code != 409 and "already exists" not in detail.lower():
+            raise RuntimeError(f"no se pudo crear el bucket {bucket}: "
+                               f"HTTP {err.code} {detail[:200]}") from err
+
+
+def upload_snapshots(log: RunLog, episode: Episode) -> dict[str, str]:
+    """
+    Sube la cenital y el alzado, y devuelve sus URLs públicas por vista.
+
+    El fallo se captura aquí y no se propaga. Una foto que no sube no puede llevarse por
+    delante el episodio entero —sus métricas, su traza de CoG y sus eventos—, que es lo
+    que pasaría si dejáramos que el error subiera hasta el `_try` del SDK: ése apaga el
+    remoto para el resto de la ejecución.
+    """
+    global _storage_warned
+    client = getattr(log, "client", None)
+    if client is None or not log.run_id or not episode.snapshots:
+        return {}
+
+    urls: dict[str, str] = {}
+    try:
+        ensure_bucket(client)
+        for view, image in episode.snapshots.items():
+            path = f"{log.run_id}/{episode.seed}/{view}.png"
+            _request(client, f"{_root(client)}/storage/v1/object/{BUCKET}/{path}",
+                     data=iio.imwrite("<bytes>", image, extension=".png"),
+                     method="POST", content_type="image/png")
+            urls[view] = f"{_root(client)}/storage/v1/object/public/{BUCKET}/{path}"
+    except (urllib.error.URLError, OSError, RuntimeError) as err:
+        if not _storage_warned:
+            detail = (err.read().decode("utf-8", "replace")[:200]
+                      if isinstance(err, urllib.error.HTTPError) else err)
+            print(f"  aviso: no se pudieron subir las imágenes ({detail}). "
+                  f"El episodio se sube igual y las fotos quedan en disco.")
+            _storage_warned = True
+        return {}
+    return urls
 
 
 # ─────────────────────────────────────────────────────────────────────────────
