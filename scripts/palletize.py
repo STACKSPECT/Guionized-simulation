@@ -64,7 +64,8 @@ def main() -> int:
     parser.add_argument("--no-telemetry", action="store_true",
                         help="no subir a Supabase; solo escribir en disco. Por defecto "
                              "sube si hay credenciales en el .env")
-    parser.add_argument("--label", default="paletizado-guion")
+    parser.add_argument("--label", default="paletizado guionizado",
+                        help="nombre de la ejecución en la lista de Ejecuciones")
     args = parser.parse_args()
 
     if args.viewer and args.episodes != 1:
