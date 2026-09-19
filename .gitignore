@@ -1,7 +1,13 @@
 # Entorno
 .venv/
+venv/
 __pycache__/
 *.py[cod]
+# El SDK se instala editable: si alguien lo hace desde dentro, no se versiona.
+*.egg-info/
+
+# Basura del sistema operativo
+.DS_Store
 
 # El modelo del brazo se clona, no se versiona: son megas de mallas con su propia
 # licencia. `scripts/setup.sh` lo trae.
