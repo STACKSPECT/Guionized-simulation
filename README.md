@@ -48,6 +48,10 @@ episodes.jsonl        una línea JSON por episodio: el resultado y sus métricas
 <seed>/front.png      alzado
 ```
 
+Para subir hace falta un `.env` con las credenciales: copia `.env.example`. Sin él la
+simulación corre igual y escribe en `runs/`, pero `--telemetry` falla en voz alta en vez
+de tragárselo.
+
 Con `--telemetry` se replica a Supabase **en vivo**: el episodio nace en curso y las
 filas salen según se miden, así que la pantalla Live de la plataforma enseña el palé
 montarse paquete a paquete en vez de aparecer ya montado. El `jsonl` en disco sigue

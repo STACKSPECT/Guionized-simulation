@@ -80,6 +80,18 @@ def main() -> int:
         remote=args.telemetry,
     )
 
+    # Pedir `--telemetry` y quedarse sin ella es un fallo, no un modo de trabajo. El SDK
+    # trata "no hay credenciales" como lo normal —correr sin Supabase es su defecto— y
+    # con eso un flag mal puesto, o un `.env` que no está donde se busca, se tragan sin
+    # decir nada: no te enteras hasta abrir la interfaz y verla vacía.
+    if args.telemetry and not log.run_id:
+        print("ERROR: --telemetry pero no hay ejecución abierta en Supabase.\n"
+              "  Comprueba SUPABASE_URL y SUPABASE_SERVICE_KEY. Se leen del .env de\n"
+              f"  este repo ({REPO}/.env) o del de su carpeta padre\n"
+              f"  ({REPO.parent}/.env). Si el problema fuera otro, el SDK lo habrá\n"
+              "  impreso justo encima de esta línea.")
+        return 1
+
     dims = pallet_cfg["pallet"]["dims"]
     print(f"palé {dims[0] * 1000:.0f} x {dims[1] * 1000:.0f} mm · "
           f"{len(scene.boxes)} cajas · {args.episodes} episodio(s)")
