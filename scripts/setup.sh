@@ -27,10 +27,10 @@ pip install -q -r "$REPO/requirements.txt"
 # quien define la forma del dato es quien lo almacena. Se instala editable para que un
 # cambio allí se vea sin reinstalar.
 #
-# La ruta importa, y no es la obvia: solo la rama `feature/backend-hardening` trae el
-# ciclo de vida del episodio (`begin`/`event`/`end`), que es lo que hace que la pantalla
-# Live esté viva. Instalar otra no falla aquí; falla al correr, y para entonces ya hay
-# episodios a medias. Por eso se comprueba abajo.
+# La ruta importa, y no es la obvia: hace falta la rama `dev` (o algo que salga de ella),
+# que es la que trae el ciclo de vida del episodio (`begin`/`event`/`end`) y lo que hace
+# que la pantalla Live esté viva. Instalar otra no falla aquí; falla al correr, y para
+# entonces ya hay episodios a medias. Por eso se comprueba abajo.
 SDK="${SDK:-$REPO/../../orca/workspaces/Platform/main/backend}"
 if [ -d "$SDK" ]; then
   echo "==> Instalando el SDK de telemetría desde $SDK"
@@ -40,7 +40,7 @@ import sys
 from theker_telemetry import RunLog
 if not hasattr(RunLog, "begin"):
     sys.exit(f"ERROR: el SDK de {sys.argv[1]} no trae el ciclo de vida del episodio.\n"
-             f"       Necesitas la rama feature/backend-hardening de Platform.")
+             f"       Necesitas la rama dev de Platform.")
 PY
 else
   echo "==> AVISO: no encuentro el SDK en $SDK"
