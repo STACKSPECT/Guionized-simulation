@@ -149,6 +149,15 @@ motion:
   # colocación: 20 mm -> 5.1 mm · 8 mm -> 1.9 mm · 2 mm -> 3.9 mm. Con 20 la caja cae y
   # rebota; con 2 la pinza roza al abrirse. 8 mm es el fondo de esa curva.
   drop_clearance: 0.008
+  # Dónde aparca el brazo para retratar el palé sin salir en la foto. Se va en
+  # CARTESIANO, subiendo recto y cruzando a la altura de tránsito: en espacio de juntas
+  # el recorrido no está controlado y barre el montón que acaba de colocar. Es el mismo
+  # motivo por el que no se pasa por `home` con una caja cogida.
+  #
+  # Tiene que quedar fuera del cono de la cenital, que está a z = 0.78 con fovy 42: a la
+  # altura de tránsito abarca unos +/-90 mm en Y alrededor de y = -0.20. Aparcar sobre
+  # la zona de preparación (y = +0.05) sobra de largo.
+  park_xy: [0.45, 0.05]
   # Cuánto se abre la pinza POR CADA LADO para soltar. No se abre del todo hasta estar
   # en alto, y ese detalle es lo que decide el episodio.
   #

@@ -47,6 +47,21 @@ class Sink(Protocol):
 
     def event(self, row: dict) -> None: ...
 
+    def snapshot(self, shot: Snapshot) -> None: ...
+
+
+@dataclass
+class Snapshot:
+    """Una vista del palé en un instante concreto del episodio.
+
+    `after_seq` es la colocación tras la que se tomó, y casa con el `after_seq` de la
+    traza de CoG: la foto y ese punto del gráfico son el mismo momento.
+    """
+
+    after_seq: int
+    view: str
+    image: np.ndarray
+
 
 @dataclass
 class Episode:
@@ -58,7 +73,7 @@ class Episode:
     states: list[measure.PalletState] = field(default_factory=list)
     drifts: list[float] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
-    snapshots: dict[str, np.ndarray] = field(default_factory=dict)
+    snapshots: list[Snapshot] = field(default_factory=list)
     failure: str | None = None
     duration_s: float = 0.0
 
@@ -125,15 +140,60 @@ def run_episode(scene: PalletScene, seed: int = 0, speed: float = 1.0,
         if episode.failure:
             break
 
+        # Al cerrar una capa, retrato. Así la interfaz ve el montón crecer en fotos y
+        # no solo en números, y cada imagen tiene su punto en la traza de CoG.
+        if index == _last_of_layer(scene, box.layer):
+            _shoot(episode, scene, arm, index, settle_steps, sink)
+
     episode.duration_s = round(float(scene.data.time), 2)
-    _finish(episode, scene, arm, settle_steps)
+    _finish(episode, scene, arm, settle_steps, sink)
     if episode.failure:
         _event(episode, scene, sink, "fail", cause=episode.failure)
     return episode
 
 
+def _last_of_layer(scene: PalletScene, layer: int) -> int:
+    """Índice de la última caja de esa capa en el guion."""
+    return max(i for i, b in enumerate(scene.boxes) if b.layer == layer)
+
+
+def _shoot(episode: Episode, scene: PalletScene, arm: ArmController, after_seq: int,
+           settle_steps: int, sink: Sink | None, park_joints: bool = False) -> None:
+    """
+    Aparta el brazo, deja que el montón se pare y retrata el palé.
+
+    Hay que apartarlo o la foto sale del dorso de la mano: el brazo acaba justo encima
+    del palé, que es donde estaba soltando.
+
+    **A media ejecución se aparta en CARTESIANO**, manteniendo la orientación que ya
+    tiene. Hacerlo en espacio de juntas deja el recorrido sin controlar y barre el
+    montón recién colocado: medido, el episodio pasaba de 10/10 a 4/10 con
+    `overhang_violation` en cuanto se metió la foto por capa. Es el mismo motivo por el
+    que no se pasa por `home` con una caja cogida.
+
+    `park_joints` es para la foto FINAL, donde ya no queda nada que colocar y la pose de
+    observación da un encuadre más limpio.
+    """
+    if park_joints:
+        arm.move_joints(scene.scene_cfg["robot"]["observe_qpos"], duration_s=2.5)
+    else:
+        motion = scene.scene_cfg["motion"]
+        park_x, park_y = motion["park_xy"]
+        transit_z = float(motion["transit_height"])
+        pose = _at_height(arm.tcp_pose(), transit_z)
+        arm.move_to(pose)                                   # primero recto hacia arriba
+        pose[0, 3], pose[1, 3] = float(park_x), float(park_y)
+        arm.move_to(pose)                                   # y luego a un lado
+    _settle(scene, settle_steps, arm)
+    for view in scene.pallet["cameras"]:
+        shot = Snapshot(after_seq=after_seq, view=view, image=render(scene, view))
+        episode.snapshots.append(shot)
+        if sink is not None:
+            sink.snapshot(shot)
+
+
 def _finish(episode: Episode, scene: PalletScene, arm: ArmController,
-            settle_steps: int) -> None:
+            settle_steps: int, sink: Sink | None) -> None:
     """
     Aparta el brazo, deja que el montón se pare del todo, vuelve a medir y fotografía.
 
@@ -148,9 +208,6 @@ def _finish(episode: Episode, scene: PalletScene, arm: ArmController,
     según se colocaba cada paquete, y cada `after_seq` solo se puede escribir una vez.
     Reescribir aquí la última dejaría el disco diciendo una cosa y la base otra.
     """
-    arm.move_joints(scene.scene_cfg["robot"]["observe_qpos"], duration_s=2.5)
-    _settle(scene, settle_steps, arm)
-
     if episode.placements:
         final: list[measure.Placement] = []
         for i in range(len(episode.placements)):
@@ -160,8 +217,11 @@ def _finish(episode: Episode, scene: PalletScene, arm: ArmController,
             episode.failure = episode.failure or "stack_collapse"
         episode.placements = final
 
-    for view in scene.pallet["cameras"]:
-        episode.snapshots[view] = render(scene, view)
+    # Si el episodio acabó justo al cerrar una capa, esa foto YA es la del palé
+    # terminado y repetirla chocaría contra el `unique(episode_id, after_seq, view)`.
+    final = max(len(episode.placements) - 1, 0)
+    if not any(s.after_seq == final for s in episode.snapshots):
+        _shoot(episode, scene, arm, final, settle_steps, sink, park_joints=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

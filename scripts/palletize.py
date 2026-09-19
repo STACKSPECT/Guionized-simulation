@@ -35,7 +35,7 @@ sys.path.insert(0, str(REPO))
 if "--viewer" not in sys.argv:
     os.environ.setdefault("MUJOCO_GL", "egl")
 
-from theker_telemetry import RunLog                                   # noqa: E402
+from theker_telemetry import EpisodeResult, RunLog                    # noqa: E402
 
 from src.pallet.episode import run_episode                            # noqa: E402
 from src.pallet.scene import build_scene, load_configs                # noqa: E402
@@ -61,8 +61,9 @@ def main() -> int:
                         help="velocidad REAL del brazo, x veces la de configs/pallet.yaml. "
                              "Por encima de x1 la caja se escurre de la pinza: la tabla "
                              "de medidas está en pallet.yaml")
-    parser.add_argument("--telemetry", action="store_true",
-                        help="sube a Supabase además de escribir en disco")
+    parser.add_argument("--no-telemetry", action="store_true",
+                        help="no subir a Supabase; solo escribir en disco. Por defecto "
+                             "sube si hay credenciales en el .env")
     parser.add_argument("--label", default="paletizado-guion")
     args = parser.parse_args()
 
@@ -82,20 +83,21 @@ def main() -> int:
         # El tamaño real del palé. La interfaz dibuja a escala y no puede deducirlo.
         config=run_config(scene),
         n_episodes=args.episodes,
-        remote=args.telemetry,
+        remote=not args.no_telemetry,
     )
 
-    # Pedir `--telemetry` y quedarse sin ella es un fallo, no un modo de trabajo. El SDK
-    # trata "no hay credenciales" como lo normal —correr sin Supabase es su defecto— y
-    # con eso un flag mal puesto, o un `.env` que no está donde se busca, se tragan sin
-    # decir nada: no te enteras hasta abrir la interfaz y verla vacía.
-    if args.telemetry and not log.run_id:
-        print("ERROR: --telemetry pero no hay ejecución abierta en Supabase.\n"
-              "  Comprueba SUPABASE_URL y SUPABASE_SERVICE_KEY. Se leen del .env de\n"
-              f"  este repo ({REPO}/.env) o del de su carpeta padre\n"
-              f"  ({REPO.parent}/.env). Si el problema fuera otro, el SDK lo habrá\n"
-              "  impreso justo encima de esta línea.")
-        return 1
+    # En qué modo va, SIEMPRE y en voz alta. Que no se imprimiera nada al estar apagada
+    # es lo que hizo perder varias ejecuciones enteras: se corrían, se miraba la
+    # interfaz, no había nada, y no había forma de saber por qué.
+    if args.no_telemetry:
+        print("telemetría: solo disco (--no-telemetry)")
+    elif log.run_id:
+        print(f"telemetría: ACTIVA · {log.path_in_ui}")
+    else:
+        print(f"telemetría: solo disco · NO hay credenciales.\n"
+              f"  Se buscan SUPABASE_URL y SUPABASE_SERVICE_KEY en {REPO}/.env y en\n"
+              f"  {REPO.parent}/.env. Copia .env.example. Si el problema fuera otro, el\n"
+              f"  SDK lo habrá impreso justo encima de esta línea.")
 
     dims = pallet_cfg["pallet"]["dims"]
     # Se dice "por episodio" a propósito: leer "10 cajas · 1 episodio" y entender que
@@ -106,47 +108,79 @@ def main() -> int:
           + ("  (usa -n para más)" if args.episodes == 1 else ""))
 
     ok = 0
-    for i in range(args.episodes):
-        seed = args.seed + i
-        # Escena nueva por episodio: reutilizarla dejaría el palé ya montado. La primera
-        # se aprovecha, que compilar el modelo no es gratis.
-        if i:
-            scene = build_scene(scene_cfg, pallet_cfg, repo=REPO)
-        print(f"\nsemilla {seed}")
+    seed = args.seed
+    # Todo el bucle va protegido: un Ctrl-C a mitad deja el episodio ABIERTO en la
+    # base, y la pantalla Live elige el primer episodio en `running` sin ordenar, así
+    # que un solo huérfano la deja clavada ahí para siempre. Cerrarlo es obligatorio,
+    # salga como salga.
+    try:
+        for i in range(args.episodes):
+            seed = args.seed + i
+            # Escena nueva por episodio: reutilizarla dejaría el palé ya montado. La primera
+            # se aprovecha, que compilar el modelo no es gratis.
+            if i:
+                scene = build_scene(scene_cfg, pallet_cfg, repo=REPO)
+            print(f"\nsemilla {seed}")
 
-        # Con Supabase configurado se escribe EN VIVO: `begin()` abre el episodio en
-        # curso y las filas van saliendo según se miden, que es lo que hace que la
-        # pantalla enseñe el palé montarse en vez de aparecer ya montado.
-        sink = RunLogSink(log, scene) if log.run_id else None
-        if sink is not None:
-            sink.begin(seed)
+            # Con Supabase configurado se escribe EN VIVO: `begin()` abre el episodio en
+            # curso y las filas van saliendo según se miden, que es lo que hace que la
+            # pantalla enseñe el palé montarse en vez de aparecer ya montado.
+            sink = RunLogSink(log, scene) if log.run_id else None
+            if sink is not None:
+                sink.begin(seed)
 
-        episode = _run(scene, seed, args, sink)
-        if episode is None:
-            return 0                              # visor cerrado a mano
+            episode = _run(scene, seed, args, sink)
+            if episode is None:
+                # Visor cerrado a mano. El episodio está ABIERTO en la base, y dejarlo así
+                # no es un detalle: la pantalla Live elige el primer episodio en `running`
+                # sin ordenar, así que un solo huérfano la deja clavada ahí para siempre.
+                # `failure` va a null porque no hay causa del vocabulario que describa
+                # "cerré la ventana"; `success=False` basta para que quede marcado.
+                print("visor cerrado: el episodio queda marcado como no terminado")
+                break
 
-        # El disco siempre, y antes que la red: las dos fotos quedan en runs/ pase lo
-        # que pase, y `sink.end()` las sube además a Storage.
-        save_snapshots(episode, log.directory / str(seed))
-        if sink is not None:
-            sink.end(episode)                     # escribe el jsonl y cierra el episodio
-        else:
-            log.writer.write(episode_result(episode, scene))
+            # El disco siempre, y antes que la red: las dos fotos quedan en runs/ pase lo
+            # que pase, y `sink.end()` las sube además a Storage.
+            save_snapshots(episode, log.directory / str(seed))
+            if sink is not None:
+                sink.end(episode)                     # escribe el jsonl y cierra el episodio
+            else:
+                log.writer.write(episode_result(episode, scene))
 
-        state = episode.states[-1] if episode.states else None
-        ok += episode.success
-        print(f"  {episode.n_placed}/{episode.n_objects} colocadas · "
-              f"{episode.duration_s:.0f} s · "
-              + (f"margen {state.stability_margin * 1000:+.0f} mm · "
-                 f"llenado {state.fill_ratio:.0%} · " if state else "")
-              + ("ÉXITO" if episode.success else f"fallo: {episode.failure}"))
+            state = episode.states[-1] if episode.states else None
+            ok += episode.success
+            print(f"  {episode.n_placed}/{episode.n_objects} colocadas · "
+                  f"{episode.duration_s:.0f} s · "
+                  + (f"margen {state.stability_margin * 1000:+.0f} mm · "
+                     f"llenado {state.fill_ratio:.0%} · " if state else "")
+                  + ("ÉXITO" if episode.success else f"fallo: {episode.failure}"))
 
-    log.close()
+    except KeyboardInterrupt:
+        print("\ninterrumpido")
+    finally:
+        # Si quedó un episodio abierto —Ctrl-C, ventana cerrada, lo que sea— se cierra
+        # marcado como no terminado. Y el run también: sin `ended_at` la interfaz no
+        # distingue una ejecución acabada de una que reventó a la mitad.
+        if log.episode_id:
+            log.end(_aborted(seed, scene))
+        log.close()
+
     print(f"\n{ok}/{args.episodes} episodios con éxito")
     print(f"disco: {log.directory}")
     if log.path_in_ui:
         print(f"interfaz: {log.path_in_ui}")
     return 0 if ok == args.episodes else 1
+
+
+def _aborted(seed: int, scene) -> EpisodeResult:
+    """Un episodio que no llegó a terminar, para poder cerrarlo igualmente."""
+    return EpisodeResult(
+        seed=seed, level=int(scene.pallet["episode"]["level"]),
+        n_objects=len(scene.boxes), n_placed=0, n_misrouted=0,
+        success=False, duration_s=round(float(scene.data.time), 2),
+        failure=None, oracle=True, task="palletizing",
+        metrics={"aborted": True},
+    )
 
 
 def _run(scene, seed: int, args, sink=None):

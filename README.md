@@ -30,8 +30,8 @@ source .venv/bin/activate
 
 python scripts/palletize.py --viewer --speed 3   # verlo montarse
 python scripts/palletize.py --viewer --hold      # y dejar la ventana abierta al acabar
-python scripts/palletize.py -n 3                 # medirlo, headless
-python scripts/palletize.py -n 3 --telemetry     # y subirlo a Supabase
+python scripts/palletize.py -n 3                 # 3 episodios, headless
+python scripts/palletize.py -n 3 --no-telemetry  # sin subir, solo disco
 python tests/test_pallet.py                      # comprobaciones
 ```
 
@@ -45,22 +45,29 @@ Cada ejecución deja en `runs/<timestamp>-pallet/`:
 
 ```
 episodes.jsonl        una línea JSON por episodio: el resultado y sus métricas
-<seed>/top.png        cenital del palé terminado
-<seed>/side.png       alzado
+<seed>/003-top.png    cenital al cerrar la capa 1
+<seed>/003-side.png   alzado
+<seed>/009-top.png    cenital del palé terminado
+<seed>/009-side.png   alzado
 ```
 
-Para subir hace falta un `.env` con las credenciales: copia `.env.example`. Sin él la
-simulación corre igual y escribe en `runs/`, pero `--telemetry` falla en voz alta en vez
-de tragárselo.
+**Sube por defecto** si hay un `.env` con las credenciales (copia `.env.example`). Sin
+él corre igual y escribe en `runs/`, y lo dice al arrancar en vez de callárselo:
+
+```
+telemetría: ACTIVA · /runs/<id>
+telemetría: solo disco · NO hay credenciales.
+```
 
 Con `--telemetry` se replica a Supabase **en vivo**: el episodio nace en curso y las
 filas salen según se miden, así que la pantalla Live de la plataforma enseña el palé
 montarse paquete a paquete en vez de aparecer ya montado. El `jsonl` en disco sigue
 siendo la fuente de verdad; si la red falla, el episodio no se entera.
 
-Las dos imágenes **también se suben**, por `RunLog.snapshot()`: el PNG va a Storage y la
-fila a la tabla `snapshots`, con el `after_seq` de la última colocación — así la foto y
-el último punto de la traza de CoG son el mismo instante.
+Las imágenes **también se suben**, por `RunLog.snapshot()`: el PNG va a Storage y la fila
+a la tabla `snapshots`. Hay una por capa cerrada y otra del palé terminado, cada una con
+el `after_seq` de su colocación — así la foto y ese punto de la traza de CoG son el mismo
+instante.
 
 ## Cómo está organizado
 

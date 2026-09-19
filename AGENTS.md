@@ -36,9 +36,9 @@ imágenes, y lo pinta con trama para que nadie los confunda.
 bash scripts/setup.sh          # venv + dependencias + SDK + modelo del brazo
 source .venv/bin/activate
 
-python scripts/palletize.py --viewer          # verlo
-python scripts/palletize.py -n 3              # medirlo, headless
-python scripts/palletize.py -n 3 --telemetry  # y subirlo
+python scripts/palletize.py --viewer            # verlo
+python scripts/palletize.py -n 3                # 3 episodios; SUBE por defecto
+python scripts/palletize.py -n 3 --no-telemetry # sin subir, solo disco
 python tests/test_pallet.py                   # comprobaciones
 python -m src.pallet.measure                  # la medida, con sus asserts
 ```
@@ -51,6 +51,19 @@ editable desde el repo Platform y comprueba que trae `RunLog.begin`: solo la ram
 Las credenciales de Supabase se leen del `.env` del repo o del de su carpeta padre.
 
 ## 4. Reglas duras
+
+**Se sube por defecto, y se dice.** Con `.env` presente la telemetría va activa sin
+pedir nada, y al arrancar se imprime en qué modo corre. No imprimirlo costó varias
+ejecuciones perdidas: se corrían, se miraba la interfaz, no había nada y no había forma
+de saber por qué.
+
+**Un episodio abierto se cierra SIEMPRE.** Cerrar el visor o un Ctrl-C dejaban la fila
+en `running`, y la pantalla Live elige el primer episodio en ese estado sin ordenar: un
+solo huérfano la deja clavada ahí para siempre. Por eso el bucle va en `try/finally`.
+
+**El brazo se aparta en cartesiano para las fotos de media ejecución.** En espacio de
+juntas el recorrido no está controlado y barre el montón: medido, el episodio pasaba de
+10/10 a 4/10 en cuanto se metió la foto por capa.
 
 **El disco manda.** El `episodes.jsonl` de `runs/` es la fuente de verdad y Supabase una
 réplica. Un fallo de red avisa una vez y el episodio sigue. No envuelvas las llamadas de

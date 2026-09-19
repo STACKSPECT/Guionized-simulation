@@ -32,7 +32,7 @@ import numpy as np
 from theker_telemetry import EpisodeResult, RunLog
 
 from src.pallet import measure
-from src.pallet.episode import Episode
+from src.pallet.episode import Episode, Snapshot
 from src.pallet.scene import PalletScene
 
 
@@ -80,32 +80,10 @@ class RunLogSink:
         self.log.begin(seed, n_objects=len(self.scene.boxes))
 
     def end(self, episode: Episode) -> EpisodeResult:
-        """Sube las fotos, cierra el episodio y devuelve su resumen.
-
-        Las fotos van ANTES del `end()`: `snapshot()` las cuelga del episodio abierto, y
-        `end()` lo cierra. Después ya no habría de dónde colgarlas.
-        """
-        self.snapshots(episode)
+        """Cierra el episodio. El `PATCH` es el aviso de "terminado" que Live espera."""
         result = episode_result(episode, self.scene)
         self.log.end(result)
         return result
-
-    def snapshots(self, episode: Episode) -> None:
-        """Las vistas del palé terminado, a Storage y a la tabla `snapshots`.
-
-        El SDK sube el PNG y rellena la `url` solo con pasarle `png=`. `after_seq` es la
-        última colocación, la misma que el último punto de la traza de CoG: así la foto
-        y ese punto son el mismo instante, que es lo que promete el esquema.
-        """
-        after_seq = max(len(episode.placements) - 1, 0)
-        for view, image in episode.snapshots.items():
-            self.log.snapshot(
-                after_seq=after_seq,
-                view=view,
-                png=iio.imwrite("<bytes>", image, extension=".png"),
-                width=int(image.shape[1]),
-                height=int(image.shape[0]),
-            )
 
     # ── las filas, una a una ────────────────────────────────────────────────
 
@@ -118,6 +96,22 @@ class RunLogSink:
 
     def event(self, row: dict) -> None:
         self.log.event(**row)
+
+    def snapshot(self, shot: Snapshot) -> None:
+        """Una vista del palé, a Storage y a la tabla `snapshots`.
+
+        Sube en cuanto se toma, como todo lo demás: la pantalla ve la foto de la capa 1
+        mientras se monta la 2. El SDK sube el PNG y rellena la `url` solo con pasarle
+        `png=`; tiene que ocurrir entre `begin()` y `end()`, que es cuando hay un
+        episodio del que colgarla.
+        """
+        self.log.snapshot(
+            after_seq=shot.after_seq,
+            view=shot.view,
+            png=iio.imwrite("<bytes>", shot.image, extension=".png"),
+            width=int(shot.image.shape[1]),
+            height=int(shot.image.shape[0]),
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -212,10 +206,11 @@ def save_snapshots(episode: Episode, directory: Path) -> dict[str, Path]:
     """
     directory.mkdir(parents=True, exist_ok=True)
     out = {}
-    for view, image in episode.snapshots.items():
-        path = directory / f"{view}.png"
-        iio.imwrite(path, image)
-        out[view] = path
+    for shot in episode.snapshots:
+        # Mismo nombre que en Storage, para poder cruzarlos de un vistazo.
+        path = directory / f"{shot.after_seq:03d}-{shot.view}.png"
+        iio.imwrite(path, shot.image)
+        out[path.stem] = path
     return out
 
 
