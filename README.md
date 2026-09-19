@@ -92,6 +92,12 @@ Panda abre 80 mm y un palé de verdad es inagarrable).
 Repetible: el guion es fijo y MuJoCo determinista, así que la misma semilla da el mismo
 palé. Eso es lo que hace comparables dos commits.
 
+## Para el paletizado de verdad
+
+Cuando exista la simulación real —con percepción y planificador—, `docs/INTEGRACION.md`
+dice cómo enchufarla a la plataforma igual que ésta: las cinco llamadas, lo único que
+cambia, las cinco trampas y cómo comprobarlo.
+
 ## De dónde sale
 
 La geometría, el control y la calibración vienen de la simulación de inducción del reto
