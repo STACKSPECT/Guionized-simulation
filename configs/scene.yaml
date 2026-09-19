@@ -1,0 +1,44 @@
+# La celda: brazo, mesa y parámetros de movimiento. Unidades SI.
+#
+# Esto describe el BANCO DE TRABAJO, no la tarea. Lo que se hace encima —el palé, el
+# catálogo de cajas y el guion de apilado— está en `pallet.yaml`, que además pisa
+# algunos valores de `motion` porque la carga de paletizado obliga a ir más despacio.
+#
+# La geometría está comprobada contra el alcance real del brazo: se resolvió IK sobre
+# una rejilla del área de trabajo a las alturas de agarre, depósito y tránsito, y no
+# quedó ninguna pose fuera. Si mueves la mesa o el palé, repite ese barrido; la
+# cabecera de `pallet.yaml` dice qué zonas NO alcanza.
+
+robot:
+  model: third_party/mujoco_menagerie/franka_emika_panda/scene.xml
+  ik_frame: tcp                  # site que añade src/pallet/scene.py entre los dedos
+  tcp_offset: [0.0, 0.0, 0.1034] # del frame "hand" a las almohadillas
+  gripper_actuator: 7            # índice en data.ctrl; rango 0-255, 255 = abierta
+  gripper_max_opening: 0.08      # dos dedos de 0.04; nada más ancho se puede agarrar
+  # Pose a la que se retira el brazo al acabar el episodio. Sin esto acaba aparcado
+  # justo encima del palé y la foto cenital sale del dorso de la mano.
+  observe_qpos: [-1.6, -0.6, 0.0, -2.4, 0.0, 2.0, -0.7853]
+
+table:
+  center: [0.50, 0.0]
+  size: [0.25, 0.30, 0.02]       # semiejes
+  height: 0.40                   # z de la superficie
+  friction: [0.9, 0.005, 0.0001]
+  rgba: [0.55, 0.52, 0.48, 1]
+
+motion:
+  cartesian_speed: 0.25          # m/s de la interpolación entre waypoints
+  angular_speed: 0.8             # rad/s (~46 grados/s)
+  drop_clearance: 0.02           # altura de suelta sobre el destino
+  settle_steps: 200              # pasos de física para que la escena se asiente
+  # Knobs de convergencia. El servo de posición del Panda tiene caída estacionaria bajo
+  # carga: el error del TCP se estanca en ~4 mm y de ahí no baja por mucho que se
+  # espere. Las tolerancias van POR ENCIMA de ese suelo medido, no por debajo; si no,
+  # `move_to` no converge nunca y todo acaba declarado `ik_unreachable`.
+  converge_s: 1.5                # cuánto se insiste en el waypoint final
+  tol_pos: 0.010                 # m
+  tol_rot: 0.06                  # norma de Frobenius de la diferencia de rotación
+  posture_cost: 0.001            # ancla los 9 DOF sin pelearse con la tarea del TCP
+
+episode:
+  control_hz: 50

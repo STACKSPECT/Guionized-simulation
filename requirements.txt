@@ -1,0 +1,13 @@
+# Versiones verificadas funcionando juntas (19/09/2026).
+# Fija la versión antes de una demo; no actualices nada la noche anterior.
+mujoco==3.13.0
+mink==1.3.0
+# mink resuelve la IK con qpsolvers y NO trae solver propio: si falta el backend,
+# solve_ik revienta en tiempo de ejecución. Se fijan los que instaló mink 1.3.0.
+qpsolvers==4.13.0
+daqp==0.9.1
+numpy==2.4.4
+scipy>=1.10
+PyYAML>=6.0
+# Solo para escribir las dos PNG del palé terminado.
+imageio==2.37.3

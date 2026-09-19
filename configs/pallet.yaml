@@ -1,0 +1,207 @@
+# Escena de paletizado. Unidades SI: metros, kilogramos, segundos, radianes.
+#
+# ESTO ES UN GUION, NO UN PLANIFICADOR. Cada caja tiene escrito de dónde se coge y en
+# qué hueco va, y el puzle encaja: las capas cubren el palé entero en una rejilla
+# regular, y todas las cajas de una capa miden lo mismo de alto, así que la superficie
+# sale plana por construcción y no porque nadie la optimice. Cuando llegue el
+# planificador de verdad, sustituye `script` y no toca nada más.
+#
+# El resto —robot, mesa, motion, episode— sale de `scene.yaml`: es la misma celda, y
+# duplicar la geometría de la mesa es la forma segura de que las dos acaben discrepando.
+#
+# ── OJO CON LAS UNIDADES DE TAMAÑO ────────────────────────────────────────────
+# Aquí se usa `dims` = dimensiones COMPLETAS. En `objects.yaml` y `scene.yaml` se usa
+# `size` = SEMIEJES, que es lo que quiere MuJoCo. Son claves distintas a propósito:
+# toda la aritmética del teselado (2 × 0.105 = 0.210) es ilegible en semiejes, y un
+# factor 2 escondido en un YAML no lo caza nadie. `scene.py` divide entre dos en un
+# único sitio, al construir los geoms.
+#
+# ── ALCANCE COMPROBADO (19/09/2026) ───────────────────────────────────────────
+# IK resuelta desde `home` sobre toda esta geometría: 120/120 poses del palé (las dos
+# capas, altura de depósito y de tránsito) y 30/30 de la preparación (agarre,
+# aproximación y elevación de las 10 cajas). Cero fuera de alcance.
+# Si mueves el palé o la preparación, repite ese barrido. Lo que NO llega: x >= 0.68 a
+# altura de aproximación, y (0.60, 0.26) a altura de elevación.
+
+pallet:
+  center: [0.45, -0.20]          # sobre la mesa de scene.yaml (superficie a z = 0.40)
+  dims: [0.210, 0.140]           # maqueta 1:5.7 del palé europeo (1200 x 800)
+  deck_thickness: 0.012          # la cubierta sobre la que se apila
+  rgba: [0.62, 0.48, 0.30, 1]    # madera
+  # La pinza del Panda abre 0.08 m. Un palé europeo de verdad es físicamente
+  # inagarrable, así que se trabaja a escala y se publica el factor: el front dibuja
+  # con las medidas reales que mide la simulación, no con un 1200 x 800 inventado.
+  scale: 5.7
+
+# Catálogo. `dims` COMPLETAS. Densidad 400 kg/m3 (cartón con aire), la misma que usa
+# `objects.yaml`.
+#
+# LA HOLGURA NO ES OPCIONAL, Y NO ES IGUAL EN LOS DOS EJES.
+#
+# En Y, que es por donde CIERRA la pinza, la separación entre dos cajas vecinas la
+# impone el dedo, no la caja. Sujetando un bulto, el pad apoya en su cara y el dedo
+# —10.5 mm de grueso, medido sobre la malla del Panda— asoma por fuera; al soltar,
+# asoma otros `release_margin`. Si esa suma no cabe en el hueco, el dedo aterriza
+# encima de la caja de al lado y la desplaza. Sale una condición limpia:
+#
+#     separación  >  release_margin + 10.5 mm + seguridad
+#
+# Con 3 + 10.5 + 8 de seguridad salen 21.5 mm, y se usan 23. Medido con menos: a 5 mm
+# el episodio moría a la tercera caja, a 15 mm aguantaba la capa 1 entera y moría a la
+# octava, cuando le tocaba a la capa 2 —más ligera y peor apoyada— aguantar el roce.
+# Un paletizador real usa ventosa justo para no tener este problema.
+#
+# En X la pinza es estrecha y no estorba: bastan 5 mm en la capa 1 y 8 en la 2.
+#
+# Y en los dos ejes quedan 2.5 mm entre la caja de la orilla y el borde del palé.
+boxes:
+  grande:
+    dims: [0.100, 0.056, 0.045]   # separación 5 mm en X, 23 mm en Y
+    mass: 0.101
+    friction: [1.1, 0.005, 0.0001]
+    rgba: [0.78, 0.42, 0.22, 1]   # cartón oscuro
+  media:
+    dims: [0.063, 0.056, 0.035]   # separación 8 mm en X, 23 mm en Y
+    mass: 0.049
+    friction: [1.1, 0.005, 0.0001]
+    rgba: [0.86, 0.62, 0.36, 1]   # cartón claro
+
+# El guion, en el orden en que se cogen las cajas. Las grandes primero: van abajo.
+#
+#   stage  dónde espera la caja sobre la mesa, en coordenadas del mundo
+#   place  centro del hueco, RELATIVO al centro del palé
+#   slot   nombre del hueco, el que sale en el feed de eventos de la interfaz
+#
+# Cómo queda cubierto el palé (0.210 x 0.140), con la holgura ya descontada:
+#   capa 1  2 x 2  ->  2*0.100 + 5 mm = 0.205 en X   ·  2*0.056 + 23 mm = 0.135 en Y
+#   capa 2  3 x 2  ->  3*0.063 + 2*8 mm = 0.205 en X ·  2*0.056 + 23 mm = 0.135 en Y
+# Las dos capas ocupan lo mismo, así que la de arriba apoya sobre la de abajo y el
+# montón no se escalona. Sobran 2.5 mm a cada lado hasta el borde del palé.
+script:
+  # ── capa 1: las grandes, abajo. Rejilla 2 x 2.
+  - {type: grande, layer: 1, slot: A1, stage: [0.36, -0.04], place: [-0.0525, -0.0395]}
+  - {type: grande, layer: 1, slot: A2, stage: [0.50, -0.04], place: [ 0.0525, -0.0395]}
+  - {type: grande, layer: 1, slot: B1, stage: [0.36,  0.05], place: [-0.0525,  0.0395]}
+  - {type: grande, layer: 1, slot: B2, stage: [0.50,  0.05], place: [ 0.0525,  0.0395]}
+  # ── capa 2: las medianas, encima. Rejilla 3 x 2.
+  - {type: media,  layer: 2, slot: C1, stage: [0.36,  0.14], place: [-0.0710, -0.0395]}
+  - {type: media,  layer: 2, slot: C2, stage: [0.45,  0.14], place: [ 0.0000, -0.0395]}
+  - {type: media,  layer: 2, slot: C3, stage: [0.54,  0.14], place: [ 0.0710, -0.0395]}
+  - {type: media,  layer: 2, slot: D1, stage: [0.36,  0.23], place: [-0.0710,  0.0395]}
+  - {type: media,  layer: 2, slot: D2, stage: [0.45,  0.23], place: [ 0.0000,  0.0395]}
+  - {type: media,  layer: 2, slot: D3, stage: [0.54,  0.23], place: [ 0.0710,  0.0395]}
+
+# Las dos vistas que se suben a la plataforma. Se renderizan con el palé ya asentado:
+# la foto tiene que enseñar cómo QUEDA el montón, no cómo cayó.
+cameras:
+  top:                             # cenital
+    position: [0.45, -0.20, 0.78]
+    lookat: [0.45, -0.20, 0.45]
+    # Qué eje del mundo sube en la imagen. Sin esto la cenital sale girada 90 grados
+    # respecto a como el front dibuja el palé (X a la derecha, Y arriba), y comparar la
+    # foto con el esquema obliga a girar la cabeza. Mirando en vertical no hay un
+    # "arriba" natural, así que se elige, no se deduce.
+    up: [0, 1, 0]
+    fovy: 42                       # encuadre justo: 0.20 x 0.27 m sobre un palé de 0.21 x 0.14
+    resolution: [800, 600]
+  front:                           # alzado: hace visible la altura de la carga
+    position: [0.45, -0.66, 0.50]
+    lookat: [0.45, -0.20, 0.46]
+    fovy: 30
+    resolution: [800, 600]
+
+# Movimiento. Estos valores PISAN los de `scene.yaml` solo para esta escena.
+#
+# La celda de paletizado mueve cajas de 330 cm3 donde inducción movía un bloque de 125,
+# y agarradas por su lado corto, no abrazadas: la caja se comporta como una tabla
+# sujeta por el canto. Con la velocidad de inducción se escurre de la pinza y llega al
+# palé desplazada casi 2 cm, que es más que la tolerancia entera.
+#
+# Medido: deslizamiento de la caja dentro de la pinza al elevarla (v = multiplicador
+# sobre `cartesian_speed` de scene.yaml, 0.25 m/s):
+#
+#            elevación 60 mm   100 mm   180 mm
+#   x1.0          -6.7 mm    -11.0     -14.0
+#   x0.5          -4.6 mm     -8.3     -15.5
+#   x0.25         -0.8 mm     -1.1      -1.5     <- aquí deja de deslizar
+#
+# Ni la masa ni la fricción lo cambian (probado de 0.03 a 0.13 kg: mismo deslizamiento):
+# es la aceleración del tramo, no el peso. Así que se baja la velocidad y se acorta la
+# elevación a lo justo para salvar el montón, en vez de tocar el catálogo.
+#
+# `cartesian_speed` 0.0625 = la de inducción entre cuatro. Es un knob de calibración:
+# si el brazo o las cajas cambian, vuelve a medir esta tabla antes de subirlo.
+motion:
+  cartesian_speed: 0.0625
+  # Altura a la que el brazo cruza entre la preparación y el palé, en z de mundo. TODO
+  # el trayecto va en cartesiano a esta cota: subir recto, cruzar, bajar recto.
+  #
+  # El rodeo por `home` en espacio de juntas que usa inducción aquí no vale de nada y
+  # hace daño dos veces: con una caja cogida la tira al suelo, y de vuelta del palé la
+  # mano barre en diagonal la caja que se acaba de soltar y la manda 75 mm de su sitio.
+  # Allí el rodeo existe porque hay que reorientar la muñeca; aquí todas las poses
+  # comparten orientación, así que la línea recta ni se atasca ni hace falta.
+  #
+  # 0.545 deja la base de la caja transportada 30 mm por encima del montón terminado
+  # (80 mm de carga sobre una cubierta a 0.412) y 60 mm sobre las cajas en espera.
+  transit_height: 0.545
+  # Altura de suelta sobre el hueco. Medido sobre un episodio entero, error medio de
+  # colocación: 20 mm -> 5.1 mm · 8 mm -> 1.9 mm · 2 mm -> 3.9 mm. Con 20 la caja cae y
+  # rebota; con 2 la pinza roza al abrirse. 8 mm es el fondo de esa curva.
+  drop_clearance: 0.008
+  # Cuánto se abre la pinza POR CADA LADO para soltar. No se abre del todo hasta estar
+  # en alto, y ese detalle es lo que decide el episodio.
+  #
+  # El dedo del Panda mide 10.5 mm de grueso (medido sobre la malla). Sujetando una caja
+  # de 60 mm, la pinza ocupa 81 mm; abriéndola del todo (80 mm) ocupa 101 mm, o sea 20.5
+  # mm por fuera de la caja — más que los 15 mm de holgura, así que el dedo aterriza
+  # sobre la caja de al lado y la desplaza 14 mm. Con 4 mm de apertura la caja se suelta
+  # igual y el dedo sigue dentro de su hueco.
+  release_margin: 0.003
+
+# Iluminación de ESTA escena. Las dos vistas piden cosas opuestas y por eso hay que
+# ajustarla: el Menagerie trae tres fuentes (foco "top" del panda, una direccional
+# cenital y el faro de cámara) y las tres caen perpendiculares a la mesa.
+#
+#   cenital  ve caras HORIZONTALES: le llega todo a la vez, 2.3 de difusa sobre un
+#            albedo de 0.6 satura el sensor y el palé sale blanco sobre mesa blanca.
+#   alzado   ve caras VERTICALES: a ésas no les llega ninguna de las tres, y bajar la
+#            luz sin más deja el alzado casi a oscuras.
+#
+# Por eso se baja lo cenital y se añade una direccional en diagonal (`fill`) que sí
+# ilumina las caras verticales. Medido, media RGB de la imagen (255 = saturado):
+#
+#            cenital          alzado
+#   defecto  [242 246 226]    [ 56  61  65]   palé blanco / cajas negras
+#   ajuste   [191 170 144]    [ 85  91  95]   madera sobre gris / relieve visible
+#
+# Son knobs de calibración: si cambias los colores del catálogo, vuelve a mirarlo.
+lighting:
+  headlight_diffuse: 0.20
+  headlight_ambient: 0.20
+  spot_diffuse: 0.20             # el foco "top" que trae panda.xml
+  overhead_diffuse: 0.30         # la direccional cenital del scene.xml del Menagerie
+  fill:                          # relleno en diagonal, para las caras verticales
+    direction: [0.0, 0.72, -0.69]
+    diffuse: 0.45
+
+episode:
+  # Nivel de dificultad, tal y como lo entiende la plataforma. En paletizado el nivel
+  # es la altura del montón: el 1 son 8 paquetes y el 2 son 10, que es este guion. Sirve
+  # para que la interfaz no compare un palé de 2 capas con uno de 4.
+  level: 2
+  # Tiempo SIMULADO máximo. El de `scene.yaml` (120 s) es de reloj y está pensado para
+  # inducción; aquí el brazo va a un cuarto de velocidad porque la carga lo obliga, y un
+  # palé de 10 cajas son unos 190 s de simulación. 300 deja margen para que un episodio
+  # que se atasca acabe marcado como `timeout` y no se quede colgado.
+  max_duration_s: 300
+  # Una caja cuenta como colocada si su centro cae a menos de esto de su hueco. Por
+  # encima de la caída estacionaria del servo del Panda (~4-6 mm, medida en inducción):
+  # una tolerancia por debajo del suelo del hardware suspende episodios buenos y manda
+  # a depurar el planificador, que no es donde está el problema.
+  tolerance_xy: 0.015
+  tolerance_yaw: 0.20
+  # Física tras soltar, antes de medir. Sin esto se mide la caja todavía en el aire.
+  settle_steps: 400
+  # Cuánto puede sobresalir del palé antes de contarlo como `overhang_violation`.
+  max_overhang: 0.010

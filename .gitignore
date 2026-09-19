@@ -1,0 +1,16 @@
+# Entorno
+.venv/
+__pycache__/
+*.py[cod]
+
+# El modelo del brazo se clona, no se versiona: son megas de mallas con su propia
+# licencia. `scripts/setup.sh` lo trae.
+third_party/
+
+# Salidas de cada ejecución: el jsonl y las dos PNG del palé. Son el resultado, no el
+# código — y hasta que se replican a Supabase, la fuente de verdad de un episodio vive
+# ahí. No las borres a la ligera.
+runs/
+
+# Credenciales de Supabase. Viven fuera del repo a propósito.
+.env
